@@ -1,12 +1,16 @@
 const { z } = require('zod');
 const dotenv = require('dotenv');
+const path = require('path');
 
-dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.string().transform(Number).default('3000'),
-  DATABASE_URL: z.string().url(),
+  DATABASE_URL: z.string().url().refine(
+    (value) => ['postgres:', 'postgresql:'].includes(new URL(value).protocol),
+    'DATABASE_URL debe ser una URL de PostgreSQL'
+  ),
   // Llaves de 32 bytes en base64 (Crypto AES-256)
   ENCRYPTION_KEY: z.string().length(44, "La llave de cifrado debe ser de 32 bytes en base64"),
   ENCRYPTION_KEY_VERSION: z.string().default('v1'),

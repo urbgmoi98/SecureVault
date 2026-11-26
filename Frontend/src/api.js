@@ -1,32 +1,40 @@
-// Frontend/src/api.js
+const apiBaseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 let csrfToken = null;
 
 export function setCsrfToken(token) {
   csrfToken = token;
 }
 
-export async function apiFetch(endpoint, options = {}) {
-  const headers = {
-    'Content-Type': 'application/json',
-    ...options.headers,
-  };
-
-  // Inyectar CSRF si la petición lo requiere (POST, PUT, DELETE)
-  if (csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method)) {
-    headers['X-CSRF-Token'] = csrfToken;
-  }
-
-  const response = await fetch(endpoint, {
-    ...options,
-    headers,
-    credentials: 'include', // Crucial para enviar la cookie __Host-SecureVault
+async function refreshCsrfToken() {
+  const response = await fetch(`${apiBaseUrl}/api/auth/csrf`, {
+    credentials: 'include'
   });
 
-  if (response.status === 401) {
-    // Sesión expirada: limpiar token y redirigir a login
-    csrfToken = null;
-    window.location.href = '/login';
+  if (!response.ok) {
+    throw new Error('No se pudo iniciar una sesión segura con el servidor.');
   }
 
-  return response;
+  const data = await response.json();
+  csrfToken = data.csrfToken;
+}
+
+export async function apiFetch(endpoint, options = {}) {
+  const method = (options.method || 'GET').toUpperCase();
+  const headers = new Headers(options.headers);
+
+  if (options.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    if (!csrfToken) await refreshCsrfToken();
+    headers.set('X-CSRF-Token', csrfToken);
+  }
+
+  return fetch(`${apiBaseUrl}${endpoint}`, {
+    ...options,
+    method,
+    headers,
+    credentials: 'include'
+  });
 }

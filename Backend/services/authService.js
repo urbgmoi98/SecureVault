@@ -72,6 +72,13 @@ exports.login = async (email, password) => {
   return user;
 };
 
+exports.getCurrentUser = async (userId) => {
+  return knex('app.users')
+    .select('id', 'email', 'name', 'role')
+    .where({ id: userId })
+    .first();
+};
+
 exports.forgotPassword = async (email) => {
   const user = await knex('app.users').where({ email: email.toLowerCase() }).first();
   
@@ -120,7 +127,8 @@ exports.resetPassword = async (token, newPassword) => {
     // Actualizar contraseña
     await trx('app.users').where({ id: resetRecord.user_id }).update({ password_hash: passwordHash });
 
-    // Revocar todas las sesiones del usuario
-    await trx('app.sessions').where({ user_id: resetRecord.user_id }).update({ is_revoked: true });
+    await trx('app.session_store')
+      .whereRaw("sess ->> 'userId' = ?", [resetRecord.user_id])
+      .delete();
   });
 };

@@ -5,6 +5,11 @@ const cookieParser = require('cookie-parser');
 const pinoHttp = require('pino-http');
 const env = require('./config/env');
 const logger = require('./utils/logger');
+const knex = require('./config/db');
+const sessionMiddleware = require('./middlewares/sessions');
+const csrfProtection = require('./middlewares/csrf');
+const authRoutes = require('./routes/authRoutes');
+const notesRoutes = require('./routes/notesRoutes');
 
 const app = express();
 
@@ -19,7 +24,10 @@ app.use(pinoHttp({ logger }));
 
 // CORS Restringido al propio dominio
 app.use(cors({
-  origin: env.ALLOWED_ORIGIN,
+  origin: [
+    env.ALLOWED_ORIGIN,
+    ...(env.NODE_ENV === 'development' ? ['http://localhost:5173'] : [])
+  ],
   credentials: true
 }));
 
@@ -45,11 +53,27 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false // Ajustar según necesidad de recursos
 }));
 
-app.use(express.json({ limit: '10kb' })); // Límite estricto de body
+app.use(express.json({ limit: '20kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 app.use(cookieParser());
+app.use(sessionMiddleware);
 
-// TODO: Configurar express-session con almacén en base de datos o Redis (Regla 3.8)
+app.get('/api/health', async (req, res) => {
+  try {
+    await knex.raw('select 1');
+    res.json({ status: 'ok', database: 'connected' });
+  } catch (error) {
+    logger.error({ msg: 'No se pudo conectar con PostgreSQL', error: error.message, reqId: req.id });
+    res.status(503).json({ status: 'error', database: 'unavailable' });
+  }
+});
+
+app.use('/api', csrfProtection);
+app.use('/api/auth', authRoutes);
+app.use('/api/notes', notesRoutes);
+app.use('/api', (req, res) => {
+  res.status(404).json({ code: 'NOT_FOUND', message: 'Ruta no encontrada' });
+});
 
 // Manejo global de errores (Sección 7)
 app.use((err, req, res, next) => {

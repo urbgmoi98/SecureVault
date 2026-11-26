@@ -21,6 +21,28 @@ const registerSchema = z.object({
   password: z.string().min(12).max(64) // Regla 3.1
 }).strict(); // Rechaza roles extra
 
+router.get('/csrf', (req, res) => {
+  const csrfToken = generateToken();
+  req.session.csrfToken = hashToken(csrfToken, 'HMAC_KEY_CSRF');
+  res.json({ csrfToken });
+});
+
+router.get('/me', async (req, res, next) => {
+  if (!req.session.userId) {
+    return res.status(401).json({ code: 'UNAUTHORIZED', message: 'No autenticado' });
+  }
+
+  try {
+    const user = await authService.getCurrentUser(req.session.userId);
+    if (!user) {
+      return res.status(401).json({ code: 'UNAUTHORIZED', message: 'No autenticado' });
+    }
+    res.json(user);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/register', authLimiter, async (req, res, next) => {
   try {
     const data = registerSchema.parse(req.body);
@@ -64,8 +86,13 @@ router.post('/login', authLimiter, async (req, res, next) => {
     if (error.message === 'ACCOUNT_LOCKED') {
       return res.status(429).json({ code: 'TOO_MANY_REQUESTS', message: 'Cuenta bloqueada temporalmente' });
     }
-    // Mensaje genérico (RF-02)
-    res.status(401).json({ code: 'UNAUTHORIZED', message: 'Credenciales inválidas' });
+    if (error.message === 'INVALID_CREDENTIALS') {
+      return res.status(401).json({ code: 'UNAUTHORIZED', message: 'Credenciales inválidas' });
+    }
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ code: 'VALIDATION_ERROR', message: 'Datos inválidos' });
+    }
+    next(error);
   }
 });
 
@@ -73,6 +100,7 @@ router.post('/logout', (req, res) => {
   req.session.destroy((err) => {
     if (err) return res.status(500).json({ code: 'INTERNAL_ERROR' });
     res.clearCookie('__Host-SecureVault', { path: '/' });
+    res.clearCookie('SecureVault', { path: '/' });
     res.status(204).send();
   });
 });
