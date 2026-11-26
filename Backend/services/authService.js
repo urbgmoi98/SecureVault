@@ -89,6 +89,7 @@ exports.login = async (email, password, requestId) => {
         details: { reason: 'failed_attempt_threshold', attempt_count: failedAttempts },
         request_id: requestId
       });
+      throw new Error('ACCOUNT_LOCKED');
     }
     throw new Error('INVALID_CREDENTIALS');
   }
