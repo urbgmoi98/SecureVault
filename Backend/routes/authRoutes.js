@@ -57,7 +57,7 @@ router.post('/register', authLimiter, async (req, res, next) => {
 router.post('/login', authLimiter, async (req, res, next) => {
   try {
     const { email, password } = z.object({ email: z.string().email(), password: z.string() }).strict().parse(req.body);
-    const user = await authService.login(email, password);
+    const user = await authService.login(email, password, req.id);
 
     // Regenerar ID de sesión al autenticar (RF-02)
     req.session.regenerate((err) => {

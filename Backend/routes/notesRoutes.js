@@ -3,6 +3,7 @@ const { z } = require('zod');
 const env = require('../config/env');
 const notesService = require('../services/notesService');
 const { requireAuth } = require('../middlewares/auth');
+const auditService = require('../services/auditService');
 
 const router = express.Router();
 const noteSchema = z.object({
@@ -26,7 +27,15 @@ router.use(requireAuth);
 
 router.get('/', async (req, res, next) => {
   try {
-    res.json(await notesService.list(req.session.userId));
+    const notes = await notesService.list(req.session.userId);
+    await auditService.logEvent({
+      event_type: 'SENSITIVE_DATA_REVEALED',
+      actor_id: req.session.userId,
+      result: 'SUCCESS',
+      details: { note_count: notes.length },
+      request_id: req.id
+    });
+    res.json(notes);
   } catch (error) {
     next(error);
   }
@@ -48,6 +57,13 @@ router.get('/:id', validateNoteId, async (req, res, next) => {
   try {
     const note = await notesService.get(req.session.userId, req.params.id);
     if (!note) return res.status(404).json({ code: 'NOT_FOUND', message: 'Nota no encontrada' });
+    await auditService.logEvent({
+      event_type: 'SENSITIVE_DATA_REVEALED',
+      actor_id: req.session.userId,
+      target_id: note.id,
+      result: 'SUCCESS',
+      request_id: req.id
+    });
     res.json(note);
   } catch (error) {
     next(error);

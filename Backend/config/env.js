@@ -10,6 +10,9 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url().refine(
     (value) => ['postgres:', 'postgresql:'].includes(new URL(value).protocol),
     'DATABASE_URL debe ser una URL de PostgreSQL'
+  ).refine(
+    (value) => !value.includes('REPLACE_WITH_DATABASE_PASSWORD'),
+    'Reemplaza REPLACE_WITH_DATABASE_PASSWORD por la contraseña de PostgreSQL de Supabase'
   ),
   // Llaves de 32 bytes en base64 (Crypto AES-256)
   ENCRYPTION_KEY: z.string().length(44, "La llave de cifrado debe ser de 32 bytes en base64"),

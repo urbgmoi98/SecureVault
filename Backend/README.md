@@ -4,9 +4,9 @@ El backend usa PostgreSQL mediante Knex y se conecta directamente a Supabase. La
 
 ## Configuración
 
-1. En Supabase, abre **Connect** y copia el URI de PostgreSQL del proyecto (usa Session Pooler si tu red no permite IPv6).
+1. En Supabase, abre **Connect** y selecciona **Session Pooler**.
 2. Desde `Backend`, ejecuta `npm run setup:env` si todavía no existe `.env`.
-3. En `Backend/.env`, reemplaza `DATABASE_URL` por el URI de Supabase y añade `?sslmode=require` (o conserva los parámetros existentes y añade `&sslmode=require`). Configura `ALLOWED_ORIGIN=http://localhost:5173` para desarrollo local.
+3. En `Backend/.env`, reemplaza `REPLACE_WITH_DATABASE_PASSWORD` dentro de `DATABASE_URL` por la contraseña de PostgreSQL de Supabase. Si contiene caracteres reservados para URL, codifícalos (percent-encoding). La URL ya incluye `sslmode=require`. Configura `ALLOWED_ORIGIN=http://localhost:5173` para desarrollo local.
 4. Aplica las migraciones y arranca el backend:
 
 ```powershell

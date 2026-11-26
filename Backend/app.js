@@ -5,11 +5,13 @@ const cookieParser = require('cookie-parser');
 const pinoHttp = require('pino-http');
 const env = require('./config/env');
 const logger = require('./utils/logger');
-const knex = require('./config/db');
 const sessionMiddleware = require('./middlewares/sessions');
 const csrfProtection = require('./middlewares/csrf');
 const authRoutes = require('./routes/authRoutes');
 const notesRoutes = require('./routes/notesRoutes');
+const healthRoutes = require('./routes/healthRoutes');
+const AppError = require('./utils/AppError');
+const errorHandler = require('./middlewares/errorHandler');
 
 const app = express();
 
@@ -53,47 +55,35 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false // Ajustar según necesidad de recursos
 }));
 
-app.use(express.json({ limit: '20kb' }));
-app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+function mapParserError(error) {
+  if (error.type === 'entity.too.large') {
+    return new AppError('El cuerpo de la petición excede el límite', 413, 'PAYLOAD_TOO_LARGE');
+  }
+  if (error instanceof SyntaxError && Object.prototype.hasOwnProperty.call(error, 'body')) {
+    return new AppError('El cuerpo de la petición no es válido', 400, 'INVALID_JSON');
+  }
+  return error;
+}
+
+function useParser(parser) {
+  return (req, res, next) => parser(req, res, (error) => next(error ? mapParserError(error) : undefined));
+}
+
+app.use(useParser(express.json({ limit: '20kb' })));
+app.use(useParser(express.urlencoded({ extended: true, limit: '10kb' })));
 app.use(cookieParser());
 app.use(sessionMiddleware);
 
-app.get('/api/health', async (req, res) => {
-  try {
-    await knex.raw('select 1');
-    res.json({ status: 'ok', database: 'connected' });
-  } catch (error) {
-    logger.error({ msg: 'No se pudo conectar con PostgreSQL', error: error.message, reqId: req.id });
-    res.status(503).json({ status: 'error', database: 'unavailable' });
-  }
-});
+app.use('/health', healthRoutes);
+app.use('/api/health', healthRoutes);
 
 app.use('/api', csrfProtection);
 app.use('/api/auth', authRoutes);
 app.use('/api/notes', notesRoutes);
-app.use('/api', (req, res) => {
-  res.status(404).json({ code: 'NOT_FOUND', message: 'Ruta no encontrada' });
+app.use('/api', (req, res, next) => {
+  next(new AppError('Ruta no encontrada', 404, 'NOT_FOUND'));
 });
 
-// Manejo global de errores (Sección 7)
-app.use((err, req, res, next) => {
-  logger.error({
-    msg: 'Error interno no manejado',
-    error: err.message,
-    stack: env.NODE_ENV === 'development' ? err.stack : undefined,
-    reqId: req.id
-  });
-
-  if (err.type === 'entity.too.large') {
-    return res.status(413).json({ code: 'PAYLOAD_TOO_LARGE', message: 'El cuerpo de la petición excede el límite', reqId: req.id });
-  }
-
-  // Respuesta genérica
-  res.status(500).json({ 
-    code: 'INTERNAL_ERROR', 
-    message: 'Ocurrió un error inesperado', 
-    reqId: req.id // Identificador de correlación
-  });
-});
+app.use(errorHandler);
 
 module.exports = app;

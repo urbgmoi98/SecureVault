@@ -2,6 +2,7 @@ const knex = require('../config/db');
 const { hashPassword, verifyPassword } = require('../crypto/password');
 const { generateToken, hashToken } = require('../crypto/token');
 const bcrypt = require('bcrypt');
+const auditService = require('./auditService');
 
 // Hash ficticio para igualar tiempos si el usuario no existe
 const DUMMY_HASH = '$2b$12$dummyhashdummyhashdummyhashdummyhashdummyhashdummyh';
@@ -28,17 +29,30 @@ exports.register = async (data) => {
   return { message: 'Registro procesado' };
 };
 
-exports.login = async (email, password) => {
+exports.login = async (email, password, requestId) => {
   const user = await knex('app.users').where({ email: email.toLowerCase() }).first();
 
   // Si no existe, comparamos contra el hash falso para igualar tiempos (A07)
   if (!user) {
     await bcrypt.compare(password, DUMMY_HASH);
+    await auditService.logEvent({
+      event_type: 'LOGIN_FAILED',
+      result: 'FAILURE',
+      details: { reason: 'invalid_credentials' },
+      request_id: requestId
+    });
     throw new Error('INVALID_CREDENTIALS');
   }
 
   // Verificar bloqueo (RF-02)
   if (user.locked_until && new Date(user.locked_until) > new Date()) {
+    await auditService.logEvent({
+      event_type: 'BRUTE_FORCE_BLOCKED',
+      actor_id: user.id,
+      result: 'BLOCKED',
+      details: { reason: 'account_locked' },
+      request_id: requestId
+    });
     throw new Error('ACCOUNT_LOCKED');
   }
 
@@ -60,6 +74,22 @@ exports.login = async (email, password) => {
       locked_until: lockedUntil
     });
 
+    await auditService.logEvent({
+      event_type: 'LOGIN_FAILED',
+      actor_id: user.id,
+      result: 'FAILURE',
+      details: { reason: 'invalid_credentials' },
+      request_id: requestId
+    });
+    if (lockedUntil) {
+      await auditService.logEvent({
+        event_type: 'BRUTE_FORCE_BLOCKED',
+        actor_id: user.id,
+        result: 'BLOCKED',
+        details: { reason: 'failed_attempt_threshold', attempt_count: failedAttempts },
+        request_id: requestId
+      });
+    }
     throw new Error('INVALID_CREDENTIALS');
   }
 
@@ -67,6 +97,13 @@ exports.login = async (email, password) => {
   await knex('app.users').where({ id: user.id }).update({
     failed_attempts: 0,
     locked_until: null
+  });
+
+  await auditService.logEvent({
+    event_type: 'LOGIN_SUCCESS',
+    actor_id: user.id,
+    result: 'SUCCESS',
+    request_id: requestId
   });
 
   return user;

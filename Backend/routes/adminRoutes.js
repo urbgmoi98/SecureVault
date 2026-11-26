@@ -26,7 +26,7 @@ router.get('/events', async (req, res, next) => {
 router.patch('/users/:id/role', async (req, res, next) => {
   try {
     const { role } = z.object({ role: z.enum(['user', 'admin']) }).strict().parse(req.body);
-    await adminService.updateUserRole(req.session.userId, req.params.id, role);
+    await adminService.updateUserRole(req.session.userId, req.params.id, role, req.id);
     res.json({ message: 'Rol actualizado' });
   } catch (err) { next(err); }
 });
