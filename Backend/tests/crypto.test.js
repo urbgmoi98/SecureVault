@@ -1,10 +1,20 @@
 jest.mock('../config/env', () => ({
   ENCRYPTION_KEY: Buffer.alloc(32, 3).toString('base64'),
-  ENCRYPTION_KEY_VERSION: 'test'
+  ENCRYPTION_KEY_VERSION: 'test',
+  PREVIOUS_ENCRYPTION_KEY: Buffer.alloc(32, 4).toString('base64'),
+  PREVIOUS_ENCRYPTION_KEY_VERSION: 'previous-test'
 }));
 
 const { encrypt, decrypt } = require('../crypto/cipher');
-const { hashPassword } = require('../crypto/password');
+const { hashPassword, verifyPassword } = require('../crypto/password');
+
+function encryptWithKey(text, aad, key, version) {
+  const iv = Buffer.alloc(12, 9);
+  const cipher = require('node:crypto').createCipheriv('aes-256-gcm', key, iv);
+  cipher.setAAD(Buffer.from(aad));
+  const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
+  return `${version}:${iv.toString('base64')}.${cipher.getAuthTag().toString('base64')}.${encrypted.toString('base64')}`;
+}
 
 function alterEncryptedPart(encrypted, partIndex) {
   const [version, payload] = encrypted.split(':');
@@ -34,8 +44,28 @@ describe('cryptography', () => {
     expect(() => decrypt(alterEncryptedPart(encrypted, 2), 'note-aad')).toThrow('CRYPTO_AUTH_FAILED');
   });
 
+  test('decrypts with the configured previous key version', () => {
+    const previousKey = Buffer.alloc(32, 4);
+    const encrypted = encryptWithKey('legacy note', 'note-aad', previousKey, 'previous-test');
+
+    expect(decrypt(encrypted, 'note-aad')).toBe('legacy note');
+  });
+
+  test('supports empty plaintext and rejects unknown key versions', () => {
+    const encrypted = encrypt('', 'note-aad');
+
+    expect(decrypt(encrypted, 'note-aad')).toBe('');
+    expect(() => decrypt(encrypted.replace('test:', 'unknown:'), 'note-aad')).toThrow('CRYPTO_AUTH_FAILED');
+  });
+
   test('hashes passwords with bcrypt cost 12', async () => {
-    const passwordHash = await hashPassword('Long-Test-Passphrase-123');
-    expect(passwordHash).toMatch(/^\$2b\$12\$/);
+    const password = 'Long-Test-Passphrase-123';
+    const firstHash = await hashPassword(password);
+    const secondHash = await hashPassword(password);
+
+    expect(firstHash).toMatch(/^\$2b\$12\$/);
+    expect(secondHash).not.toBe(firstHash);
+    await expect(verifyPassword(password, firstHash)).resolves.toBe(true);
+    await expect(hashPassword('é'.repeat(37))).rejects.toThrow('PASSWORD_TOO_LONG');
   });
 });

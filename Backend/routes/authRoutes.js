@@ -5,6 +5,15 @@ const authService = require('../services/authService');
 const { z } = require('zod');
 const { generateToken, hashToken } = require('../crypto/token');
 
+const passwordSchema = z.string().min(12).max(64).refine(
+  (password) => Buffer.byteLength(password, 'utf8') <= 72,
+  'La contraseña excede el límite de bytes permitido'
+);
+const loginPasswordSchema = z.string().max(64).refine(
+  (password) => Buffer.byteLength(password, 'utf8') <= 72,
+  'La contraseña excede el límite de bytes permitido'
+);
+
 // Rate Limit específico para Auth (RF-02)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -18,7 +27,7 @@ const authLimiter = rateLimit({
 const registerSchema = z.object({
   email: z.string().email(),
   name: z.string().min(2).max(100),
-  password: z.string().min(12).max(64) // Regla 3.1
+  password: passwordSchema
 }).strict(); // Rechaza roles extra
 
 router.get('/csrf', (req, res) => {
@@ -56,7 +65,10 @@ router.post('/register', authLimiter, async (req, res, next) => {
 
 router.post('/login', authLimiter, async (req, res, next) => {
   try {
-    const { email, password } = z.object({ email: z.string().email(), password: z.string() }).strict().parse(req.body);
+    const { email, password } = z.object({
+      email: z.string().email(),
+      password: loginPasswordSchema
+    }).strict().parse(req.body);
     const user = await authService.login(email, password, req.id);
 
     // Regenerar ID de sesión al autenticar (RF-02)
@@ -119,7 +131,7 @@ router.post('/password/reset', authLimiter, async (req, res, next) => {
   try {
     const { token, newPassword } = z.object({ 
       token: z.string(), 
-      newPassword: z.string().min(12).max(64) 
+      newPassword: passwordSchema
     }).parse(req.body);
     await authService.resetPassword(token, newPassword);
     res.json({ message: 'Contraseña actualizada exitosamente' });

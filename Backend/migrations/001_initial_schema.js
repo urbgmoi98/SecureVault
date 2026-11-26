@@ -4,7 +4,7 @@ exports.up = async function(knex) {
   
   // 2. Tabla de usuarios
   await knex.raw(`
-    CREATE TABLE app.users (
+    CREATE TABLE IF NOT EXISTS app.users (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       email VARCHAR(255) UNIQUE NOT NULL,
       name VARCHAR(255) NOT NULL,

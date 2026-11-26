@@ -1,0 +1,57 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Backend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: Backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run lint if configured
+        run: |
+          if node -e "const scripts = require('./package.json').scripts || {}; process.exit(scripts.lint ? 0 : 1)"; then
+            npm run lint
+          else
+            echo "No lint script configured; skipping."
+          fi
+
+      - name: Run tests
+        run: npm test
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+      - name: Check for prohibited algorithms
+        run: |
+          if grep -RInE --exclude-dir=node_modules --exclude-dir=.git 'MD5|SHA-1|createCipher\(' .; then
+            echo "Prohibited algorithm marker found."
+            exit 1
+          else
+            status=$?
+            if [ "$status" -ne 1 ]; then
+              exit "$status"
+            fi
+            echo "No prohibited algorithm markers found."
+          fi

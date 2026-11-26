@@ -119,6 +119,23 @@ describe('authentication security', () => {
     expect(mockUsers).toHaveLength(0);
   });
 
+  test('rejects passwords that exceed the bcrypt UTF-8 byte limit', async () => {
+    const { agent, csrfToken } = await createAgentWithCsrf();
+
+    const response = await agent
+      .post('/api/auth/register')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        email: 'unicode@example.com',
+        name: 'Unicode User',
+        password: 'é'.repeat(37)
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('VALIDATION_ERROR');
+    expect(mockUsers).toHaveLength(0);
+  });
+
   test('rejects a role injection and creates valid registrations as user', async () => {
     const { agent, csrfToken } = await createAgentWithCsrf();
 

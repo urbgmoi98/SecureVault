@@ -1,6 +1,6 @@
 exports.up = async function (knex) {
   await knex.raw(`
-    CREATE TABLE app.security_events (
+    CREATE TABLE IF NOT EXISTS app.security_events (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       event_type VARCHAR(100) NOT NULL,
@@ -15,6 +15,7 @@ exports.up = async function (knex) {
   await knex.raw('ALTER TABLE app.security_events ENABLE ROW LEVEL SECURITY');
   await knex.raw('ALTER TABLE app.security_events FORCE ROW LEVEL SECURITY');
 
+  await knex.raw('DROP POLICY IF EXISTS security_events_admin_select ON app.security_events');
   await knex.raw(`
     CREATE POLICY security_events_admin_select
     ON app.security_events
@@ -26,6 +27,7 @@ exports.up = async function (knex) {
     )
   `);
 
+  await knex.raw('DROP POLICY IF EXISTS security_events_authenticated_insert ON app.security_events');
   await knex.raw(`
     CREATE POLICY security_events_authenticated_insert
     ON app.security_events

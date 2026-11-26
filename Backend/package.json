@@ -8,10 +8,11 @@
     "setup:env": "node scripts/setup-env.js",
     "test": "jest --runInBand --detectOpenHandles",
     "migrate": "knex --knexfile knexfile.js migrate:latest",
-    "seed": "knex seed:run"
+    "seed": "knex seed:run",
+    "seed:test": "node scripts/seed-test-data.js"
   },
   "dependencies": {
-    "bcrypt": "^5.1.1",
+    "bcrypt": "^6.0.0",
     "connect-session-knex": "^5.0.0",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",

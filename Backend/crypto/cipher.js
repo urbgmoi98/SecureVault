@@ -1,9 +1,23 @@
 const crypto = require('node:crypto');
 const env = require('../config/env');
 
-// Decodificar llaves
-const key = Buffer.from(env.ENCRYPTION_KEY, 'base64');
-const keyVersion = env.ENCRYPTION_KEY_VERSION;
+const keyring = new Map([
+  [env.ENCRYPTION_KEY_VERSION, Buffer.from(env.ENCRYPTION_KEY, 'base64')]
+]);
+if (env.PREVIOUS_ENCRYPTION_KEY && env.PREVIOUS_ENCRYPTION_KEY_VERSION) {
+  keyring.set(
+    env.PREVIOUS_ENCRYPTION_KEY_VERSION,
+    Buffer.from(env.PREVIOUS_ENCRYPTION_KEY, 'base64')
+  );
+}
+const currentKey = keyring.get(env.ENCRYPTION_KEY_VERSION);
+const currentKeyVersion = env.ENCRYPTION_KEY_VERSION;
+
+function decodeBase64(value) {
+  const decoded = Buffer.from(value, 'base64');
+  if (decoded.toString('base64') !== value) throw new Error('Invalid base64');
+  return decoded;
+}
 
 /**
  * Cifra un texto plano.
@@ -13,7 +27,7 @@ const keyVersion = env.ENCRYPTION_KEY_VERSION;
  */
 function encrypt(text, aad) {
   const iv = crypto.randomBytes(12); // IV de 12 bytes ÚNICO
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const cipher = crypto.createCipheriv('aes-256-gcm', currentKey, iv);
   
   cipher.setAAD(Buffer.from(aad));
   
@@ -23,7 +37,7 @@ function encrypt(text, aad) {
   const tag = cipher.getAuthTag().toString('base64');
   
   // Retornamos en formato: Version:IV:Tag:Datos (El documento pide IV, tag, datos separados por punto, agregamos versión)
-  return `${keyVersion}:${iv.toString('base64')}.${tag}.${encrypted}`;
+  return `${currentKeyVersion}:${iv.toString('base64')}.${tag}.${encrypted}`;
 }
 
 /**
@@ -34,24 +48,28 @@ function encrypt(text, aad) {
  */
 function decrypt(encryptedData, aad) {
   try {
-    const [version, payload] = encryptedData.split(':');
-    const [ivB64, tagB64, dataB64] = payload.split('.');
-    
-    if (!ivB64 || !tagB64 || !dataB64) throw new Error('Formato inválido');
+    if (typeof encryptedData !== 'string') throw new Error('Formato inválido');
+    const separator = encryptedData.indexOf(':');
+    if (separator <= 0) throw new Error('Formato inválido');
 
-    const iv = Buffer.from(ivB64, 'base64');
-    const tag = Buffer.from(tagB64, 'base64');
-    
-    // TODO: Implementar rotación de llaves si version !== keyVersion
-    
+    const version = encryptedData.slice(0, separator);
+    const key = keyring.get(version);
+    if (!key) throw new Error('Versión de llave desconocida');
+
+    const parts = encryptedData.slice(separator + 1).split('.');
+    if (parts.length !== 3 || !parts[0] || !parts[1]) throw new Error('Formato inválido');
+
+    const [ivB64, tagB64, dataB64] = parts;
+    const iv = decodeBase64(ivB64);
+    const tag = decodeBase64(tagB64);
+    const data = decodeBase64(dataB64);
+    if (iv.length !== 12 || tag.length !== 16) throw new Error('Formato inválido');
+
     const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
     decipher.setAuthTag(tag);
     decipher.setAAD(Buffer.from(aad));
 
-    let decrypted = decipher.update(dataB64, 'base64', 'utf8');
-    decrypted += decipher.final('utf8');
-    
-    return decrypted;
+    return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
   } catch (error) {
     // Regla 3.3: Falla de forma segura y registra (manejado en capas superiores)
     throw new Error('CRYPTO_AUTH_FAILED'); 
